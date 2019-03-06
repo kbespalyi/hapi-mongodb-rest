@@ -1,0 +1,19 @@
+{
+  "name": "HAPI-REST",
+  "version": "1.0.0",
+  "description": "Hapi.js Project with MongoDb/Mongoose and Data Validation Support",
+  "main": "src/server.js",
+  "repository": "https://github.com/kbespalyi/hapi-mongodb-rest.git",
+  "license": "MIT",
+  "scripts": {
+    "start": "NODE_ENV=local node src/server",
+    "test": "NODE_ENV=test node src/server"
+  },
+  "dependencies": {
+    "hapi": "^18.1.0",
+    "hapi-pino": "^5.4.1",
+    "inert": "^5.1.2",
+    "joi": "^14.3.1",
+    "mongoose": "^5.4.17"
+  }
+}
