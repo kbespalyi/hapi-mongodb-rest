@@ -2,234 +2,85 @@
 
 const Path = require('path')
 const Hapi = require('hapi')
+const Boom = require('boom')
+const Hoek = require('hoek')
 const Mongoose = require('mongoose')
-const Joi = require('joi')
-const Inert = require('inert')
 
-let CONNECTION_URL
-let DATABASE_NAME
-if (process.NODE_ENV === 'production') {
-  DATABASE_NAME = "customermanager"
-  CONNECTION_URL = `mongodb+srv://admin:tereyaki1!@cluster0-zntm6.mongodb.net/${DATABASE_NAME}?retryWrites=true`
-} else if (process.NODE_ENV === 'test') {
-  DATABASE_NAME = "customermanager-test"
-  CONNECTION_URL = `mongodb://localhost/${DATABASE_NAME}`
-} else {
-  DATABASE_NAME = "customermanager"
-  CONNECTION_URL = `mongodb://localhost/${DATABASE_NAME}`
-}
+process.on('unhandledRejection', (err) => {
+  console.log(err)
+  process.exit(1)
+})
 
-const server = new Hapi.Server({
-  'host': 'localhost',
-  'port': 3000,
+const isProd = process.env.NODE_ENV === 'production'
+const isDev = !isProd && process.env.NODE_ENV !== 'test'
+const config = require('./config')
+const routes = require('./routes')
+const auth = require("./auth")
+
+const serverOptions = {
+  host: config.SERVER_HOST,
+  port: config.SERVER_PORT,
+  /*cache: [
+    {
+      name: 'redisCache',
+      engine: require('catbox-redis'),
+      host: '127.0.0.1',
+      partition: 'cache'
+    }
+  ],*/
   routes: {
     files: {
-      relativeTo: Path.join(__dirname, 'public')
+      relativeTo: Path.join(__dirname, '../client')
     }
   }
-})
+}
 
-const Schema = Mongoose.Schema
-const ObjectId = Mongoose.Types.ObjectId
-const Mixed = Mongoose.Schema.Types.Mixed
-const array = Mongoose.Types.Array
+if (isDev) {
+  Object.assign(serverOptions, { debug: { request: ['error'] } })
+}
 
-const personSchema = new Schema({
-    firstname: String,
-    lastname: String,
-    email: { type: String, required: true, unique: true },
-    created: { type: Date, index: true }
-})
+const server = new Hapi.Server(serverOptions)
 
-personSchema.pre('save', function(next) {
-  if (!this.created) this.created = new Date
-  next();
-});
-
-personSchema.pre('validate', function(next) {
-  if (!this.firstname) this.firstname = 'any'
-  if (!this.lastname) this.lastname = 'any'
-  if (!this.email) this.email = 'any@test.com'
-  next();
-})
-
-const PersonModel = Mongoose.model('Person', personSchema, 'people')
-
-server.route({
-  method: 'POST',
-  path: '/person',
-  options: {
-    validate: {
-      payload: {
-        firstname: Joi.string().required(),
-        lastname: Joi.string().required(),
-        email: Joi.string().required()
-      },
-      failAction: (request, h, error) => {
-        request.logger.info('Error: %s', error.message);
-        return (
-          error.isJoi
-            ? h.response(error.details[0]).takeover()
-            : h.response(error).takeover()
-        )
-      }
-    }
-  },
-  handler: async (request, h) => {
-    request.logger.info('In handler %s', request.path);
-    try {
-      const person = new PersonModel(request.payload)
-      const result = await person.save()
-      return h.response(result);
-    } catch (error) {
-      request.logger.info('Error: %s', error.message);
-      return h.response(error).code(500)
-    }
-  }
-})
-
-server.route({
-  method: 'GET',
-  path: '/people',
-  handler: async (request, h) => {
-    request.logger.info('In handler %s', request.path);
-    try {
-      const person = await PersonModel.find().exec()
-      return h.response(person)
-    } catch (error) {
-      request.logger.info('Error: %s', error.message);
-      return h.response(error).code(500)
-    }
-  }
-})
-
-server.route({
-  method: 'GET',
-  path: '/person/{id}',
-  handler: async (request, h) => {
-    request.logger.info('In handler %s', request.path);
-    try {
-      const person = await PersonModel.findById(request.params.id).exec()
-      return h.response(person)
-    } catch (error) {
-      request.logger.info('Error: %s', error.message);
-      return h.response(error).code(500)
-    }
-  }
-})
-
-server.route({
-  method: 'PUT',
-  path: '/person/{id}',
-  options: {
-    validate: {
-      payload: {
-        firstname: Joi.string().optional(),
-        lastname: Joi.string().optional()
-      },
-      failAction: (request, h, error) => {
-        request.logger.info('Error: %s', error.message);
-        return (
-          error.isJoi
-            ? h.response(error.details[0]).takeover()
-            : h.response(error).takeover()
-        )
-      }
-    }
-  },
-  handler: async (request, h) => {
-    request.logger.info('In handler %s', request.path);
-    try {
-      const result = await PersonModel.findByIdAndUpdate(request.params.id, request.payload, { new: true })
-      return h.response(result)
-    } catch (error) {
-      request.logger.info('Error: %s', error.message);
-      return h.response(error).code(500)
-    }
-  }
-})
-
-server.route({
-  method: 'DELETE',
-  path: '/person/{id}',
-  handler: async (request, h) => {
-    request.logger.info('In handler %s', request.path);
-    try {
-      const result = await PersonModel.findByIdAndDelete(request.params.id)
-      return h.response(result)
-    } catch (error) {
-      request.logger.info('Error: %s', error.message);
-      return h.response(error).code(500)
-    }
-  }
-})
-
-server.route({
-  method: 'GET',
-  path: '/robot.txt',
-  handler(request, h) {
-    let path = 'plain.txt'
-    if (request.headers['x-magic'] === 'sekret') {
-      path = 'awesome.png'
-    }
-
-    return h.file(path).vary('x-magic')
-  }
-})
-
-server.route({
-  method: 'GET',
-  path: '/picture.jpg',
-  handler: function(request, h) {
-    return h.file('/public/images/picture.jpg');
+server.log(['error', 'database', 'read'])
+server.events.on('log', (event, tags) => {
+  if (tags.error) {
+    console.error(`Server error: ${event.error ? event.error.message : 'unknown'}`);
   }
 })
 
 server.ext('onPreResponse', (request, h) => {
   const response = request.response
-  if (response.isBoom && response.output.statusCode === 404) {
-    //Boom.notFound()
-    //Boom.forbidden()
-    return h.file('404.html').code(404)
+  if (response.isBoom) {
+    if (response.output.statusCode === 404) {
+      return h.file('404.html').code(404)
+    } else if (response.output.statusCode >= 400 && response.output.statusCode < 500) {
+      return Boom.badRequest()
+    } else if (response.output.statusCode >= 500) {
+      console.error('Error code', response.output.statusCode, response.output.payload.message)
+      return Boom.serverUnavailable()
+    }
   }
-
   return h.continue
 })
 
 // Start the server
 const start = async function() {
 
-  await server.register({
-    plugin: require('hapi-pino'),
-    options: {
-      prettyPrint: true,
-      logEvents: ['response', 'onPostStart']
-    }
-  })
+  console.log('Node environment:', process.env.NODE_ENV)
 
-  await server.register(Inert);
+  const add = async (a, b) => {
+    await Hoek.wait(1000)   // Simulate some slow I/O
+    return Number(a) + Number(b)
+  }
 
-  server.route({
-    method: 'GET',
-    path: '/{param*}',
-    handler: {
-      directory: {
-        path: '.',
-        redirectToSlash: true,
-        index: true,
-      }
+  server.method('sum', add/*, {
+    cache: {
+      cache: 'redisCache',
+      expiresIn: 10 * 1000,
+      generateTimeout: 2000,
+      getDecoratedValue: true
     }
-  })
-
-  server.route({
-    method: 'GET',
-    path: '/{filename}',
-    handler: {
-      file: function(request) {
-        return request.params.filename;
-      }
-    }
-  })
+  }*/)
 
   const options = {
     useNewUrlParser: true,
@@ -247,23 +98,25 @@ const start = async function() {
   }
 
   try {
-    await Mongoose.connect(CONNECTION_URL, options)
+    await Mongoose.connect(config.CONNECTION_URL, options)
   } catch (err) {
     console.log(err)
     process.exit(1)
   }
+
+  // register auth
+  await auth.register(server)
+  // register routes
+  await routes.register(server);
 
   try {
     await server.start()
   } catch (err) {
-    console.log(err)
+    server.log(['error', 'home'], err);
     process.exit(1)
   }
 }
 
-process.on('unhandledRejection', (err) => {
-  console.log(err)
-  process.exit(1)
-})
-
 start()
+
+module.exports = server
