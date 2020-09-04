@@ -29,7 +29,7 @@
     "catbox-redis": "^4.2.4",
     "dotenv": "^6.2.0",
     "ejs": "^2.6.1",
-    "handlebars": "^4.1.0",
+    "handlebars": "^4.4.5",
     "hapi": "^18.1.0",
     "hapi-auth-cookie": "^9.1.0",
     "hapi-pino": "^5.4.1",
